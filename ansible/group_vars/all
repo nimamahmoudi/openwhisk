@@ -385,7 +385,7 @@ metrics:
   kamon:
     enabled: "{{ metrics_kamon | default(true) }}"
     tags: "{{ metrics_kamon_tags | default(false) }}"
-    host: "{{ metrics_kamon_statsd_host | default('') }}"
+    host: "{{ metrics_kamon_statsd_host | default('10.1.4.64') }}"
     port: "{{ metrics_kamon_statsd_port | default('8125') }}"
 
 user_events: "{{ user_events_enabled | default(true) }}"
