@@ -1,7 +1,7 @@
 import time
 
-from prometheus_client import Gauge
-from prometheus_client import start_http_server
+# source: https://github.com/prometheus/client_python
+from prometheus_client import Gauge, start_http_server
 
 import docker
 docker_client = docker.from_env()
@@ -24,7 +24,7 @@ def get_container_counts():
                         'name': name,
                         'env': env,
                     }
-        except:
+        except Exception:
             pass
 
     return counts
@@ -36,11 +36,16 @@ start_http_server(8001)
 print('done!')
 
 while True:
-    counts = get_container_counts()
-    for k, v in counts.items():
-        tag = k
-        name = v['name']
-        env = v['env']
-        g.labels(tag=tag, name=name, env=env).set(v['count'])
-
+    try:
+        counts = get_container_counts()
+        for k, v in counts.items():
+            tag = k
+            name = v['name']
+            env = v['env']
+            g.labels(tag=tag, name=name, env=env).set(v['count'])
+    
+    except Exception:
+        pass
+    
     time.sleep(0.1)
+    
