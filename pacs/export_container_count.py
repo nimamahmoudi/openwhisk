@@ -1,4 +1,5 @@
 import time
+import traceback
 
 # source: https://github.com/prometheus/client_python
 from prometheus_client import Gauge, start_http_server
@@ -25,7 +26,7 @@ def get_container_counts():
                         'env': env,
                     }
         except Exception:
-            pass
+            traceback.print_exc()
 
     return counts
 
@@ -38,6 +39,16 @@ print('done!')
 while True:
     try:
         counts = get_container_counts()
+
+        all_metrics = g._metrics.keys()
+        # add 0 for apps that don't appear anymore
+        for m in [m for m in all_metrics if m[0] not in counts]:
+            counts[m[0]] = {
+                'name': m[1],
+                'env': m[2],
+                'count': 0,
+            }
+
         for k, v in counts.items():
             tag = k
             name = v['name']
@@ -45,7 +56,7 @@ while True:
             g.labels(tag=tag, name=name, env=env).set(v['count'])
     
     except Exception:
-        pass
+        traceback.print_exc()
     
-    time.sleep(0.1)
+    time.sleep(1)
     
