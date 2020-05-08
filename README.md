@@ -16,7 +16,7 @@ I use the following commands to deploy the installation:
 sudo apt-get install git -y
 
 # Clone openwhisk
-git clone https://github.com/apache/openwhisk.git openwhisk
+git clone https://github.com/nimamahmoudi/openwhisk.git openwhisk
 
 # Change current directory to openwhisk
 cd openwhisk
