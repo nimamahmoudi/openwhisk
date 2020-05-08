@@ -27,7 +27,7 @@ import spray.json.DefaultJsonProtocol
 import spray.json.DefaultJsonProtocol._
 import spray.json._
 import org.apache.openwhisk.common.TransactionId
-import org.apache.openwhisk.core.database.DocumentFactory
+import org.apache.openwhisk.core.database.{ArtifactStore, CacheChangeNotification, DocumentFactory}
 import org.apache.openwhisk.core.entity.types.EntityStore
 
 /**
@@ -122,14 +122,8 @@ case class WhiskPackage(namespace: EntityPath,
    * for this check.
    */
   def withPackageActions(actions: List[WhiskPackageAction] = List.empty): WhiskPackageWithActions = {
-    val actionGroups = actions map { a =>
-      //  group into "actions" and "feeds"
-      val feed = a.annotations.get(Parameters.Feed) map { _ =>
-        true
-      } getOrElse false
-      (feed, a)
-    } groupBy { _._1 } mapValues { _.map(_._2) }
-    WhiskPackageWithActions(this, actionGroups.getOrElse(false, List.empty), actionGroups.getOrElse(true, List.empty))
+    val (feedActions, nonFeedActions) = actions.partition(_.annotations.get(Parameters.Feed).isDefined)
+    WhiskPackageWithActions(this, nonFeedActions, feedActions)
   }
 
   def toJson = WhiskPackage.serdes.write(this).asJsObject
@@ -204,10 +198,15 @@ object WhiskPackage
     }
     jsonFormat8(WhiskPackage.apply)
   }
-
   override val cacheEnabled = true
 
   lazy val publicPackagesView: View = WhiskQueries.entitiesView(collection = s"$collectionName-public")
+  // overriden to store encrypted parameters.
+  override def put[A >: WhiskPackage](db: ArtifactStore[A], doc: WhiskPackage, old: Option[WhiskPackage])(
+    implicit transid: TransactionId,
+    notifier: Option[CacheChangeNotification]): Future[DocInfo] = {
+    super.put(db, doc.copy(parameters = ParameterEncryption.lock(doc.parameters)).revision[WhiskPackage](doc.rev), old)
+  }
 }
 
 /**

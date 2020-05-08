@@ -21,6 +21,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{HttpRequest, StatusCodes}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import com.typesafe.config.ConfigFactory
+import io.prometheus.client.CollectorRegistry
 import kamon.Kamon
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -48,16 +49,19 @@ class OpenWhiskEventsTests extends KafkaSpecBase {
            | whisk {
            |  user-events {
            |    port = $httpPort
+           |    rename-tags {
+           |      namespace = "ow_namespace"
+           |    }
            |  }
            | }
          """.stripMargin).withFallback(globalConfig)
-
+    CollectorRegistry.defaultRegistry.clear()
     val binding = OpenWhiskEvents.start(config).futureValue
     val res = get("localhost", httpPort, "/ping")
     res shouldBe Some(StatusCodes.OK, "pong")
 
     //Check if metrics using Kamon API gets included in consolidated Prometheus
-    Kamon.counter("fooTest").increment(42)
+    Kamon.counter("fooTest").withoutTags().increment(42)
     sleep(1.second)
     val metricRes = get("localhost", httpPort, "/metrics")
     metricRes.get._2 should include("fooTest")

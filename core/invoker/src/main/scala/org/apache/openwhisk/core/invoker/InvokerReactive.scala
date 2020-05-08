@@ -26,7 +26,8 @@ import akka.event.Logging.InfoLevel
 import akka.stream.ActorMaterializer
 import org.apache.openwhisk.common._
 import org.apache.openwhisk.common.tracing.WhiskTracerProvider
-import org.apache.openwhisk.core.connector.{AcknowledegmentMessage, _}
+import org.apache.openwhisk.core.ack.{MessagingActiveAck, UserEventSender}
+import org.apache.openwhisk.core.connector._
 import org.apache.openwhisk.core.containerpool._
 import org.apache.openwhisk.core.containerpool.logging.LogStoreProvider
 import org.apache.openwhisk.core.database.{UserContext, _}
@@ -44,53 +45,6 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 object InvokerReactive extends InvokerProvider {
-
-  /**
-   * A method for sending Active Acknowledgements (aka "active ack") messages to the load balancer. These messages
-   * are either completion messages for an activation to indicate a resource slot is free, or result-forwarding
-   * messages for continuations (e.g., sequences and conductor actions).
-   *
-   * The activation result is always provided because some acknowledegment messages may not carry the result of
-   * the activation and this is needed for sending user events.
-   *
-   * @param tid the transaction id for the activation
-   * @param activationResult is the activation result
-   * @param blockingInvoke is true iff the activation was a blocking request
-   * @param controllerInstance the originating controller/loadbalancer id
-   * @param userId is the UUID for the namespace owning the activation
-   * @param acknowledegment the acknowledgement message to send
-   */
-  trait ActiveAck {
-    def apply(tid: TransactionId,
-              activationResult: WhiskActivation,
-              blockingInvoke: Boolean,
-              controllerInstance: ControllerInstanceId,
-              userId: UUID,
-              acknowledegment: AcknowledegmentMessage): Future[Any]
-  }
-
-  /**
-   * Collect logs after the activation has finished.
-   *
-   * This method is called after an activation has finished. The logs gathered here are stored along the activation
-   * record in the database.
-   *
-   * @param transid transaction the activation ran in
-   * @param user the user who ran the activation
-   * @param activation the activation record
-   * @param container container used by the activation
-   * @param action action that was activated
-   * @return logs for the given activation
-   */
-  trait LogsCollector {
-    def logsToBeCollected(action: ExecutableWhiskAction): Boolean = action.limits.logs.asMegaBytes != 0.MB
-
-    def apply(transid: TransactionId,
-              user: Identity,
-              activation: WhiskActivation,
-              container: Container,
-              action: ExecutableWhiskAction): Future[ActivationLogs]
-  }
 
   override def instance(
     config: WhiskConfig,
@@ -187,9 +141,9 @@ class InvokerReactive(
   private val collectLogs = new LogStoreCollector(logsProvider)
 
   /** Stores an activation in the database. */
-  private val store = (tid: TransactionId, activation: WhiskActivation, context: UserContext) => {
+  private val store = (tid: TransactionId, activation: WhiskActivation, isBlocking: Boolean, context: UserContext) => {
     implicit val transid: TransactionId = tid
-    activationStore.storeAfterCheck(activation, context)(tid, notifier = None)
+    activationStore.storeAfterCheck(activation, isBlocking, None, context)(tid, notifier = None, logging)
   }
 
   /** Creates a ContainerProxy Actor when being called. */
@@ -274,7 +228,7 @@ class InvokerReactive(
                   msg.user.namespace.uuid,
                   CombinedCompletionAndResultMessage(transid, activation, instance))
 
-                store(msg.transid, activation, UserContext(msg.user))
+                store(msg.transid, activation, msg.blocking, UserContext(msg.user))
                 Future.successful(())
             }
         } else {
@@ -340,4 +294,5 @@ class InvokerReactive(
       case Failure(t) => logging.error(this, s"failed to ping the controller: $t")
     }
   })
+
 }

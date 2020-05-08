@@ -39,7 +39,7 @@ import spray.json._
  * Represents a single log line as read from a docker log
  */
 protected[core] case class LogLine(time: String, stream: String, log: String) {
-  def toFormattedString = f"$time%-30s $stream: ${log.trim}"
+  def toFormattedString = f"$time%-30s $stream: ${log.stripLineEnd}"
 }
 
 protected[core] object LogLine extends DefaultJsonProtocol {
@@ -68,8 +68,16 @@ class DockerToActivationLogStore(system: ActorSystem) extends LogStore {
   override val containerParameters = Map("--log-driver" -> Set("json-file"))
 
   /* As logs are already part of the activation record, just return that bit of it */
-  override def fetchLogs(activation: WhiskActivation, context: UserContext): Future[ActivationLogs] =
-    Future.successful(activation.logs)
+  override def fetchLogs(namespace: String,
+                         activationId: ActivationId,
+                         start: Option[Instant],
+                         end: Option[Instant],
+                         activationLogs: Option[ActivationLogs],
+                         context: UserContext): Future[ActivationLogs] =
+    activationLogs match {
+      case Some(logs) => Future.successful(logs)
+      case None       => Future.failed(new RuntimeException(s"Activation logs not available for activation ${activationId}"))
+    }
 
   /**
    * Obtains the container's stdout and stderr output.
